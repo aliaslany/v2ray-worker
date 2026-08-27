@@ -1,8 +1,14 @@
 name = "sub"
 main = "src/worker.ts"
-compatibility_date = "2024-05-29"
+compatibility_date = "2026-08-25"
 compatibility_flags = ["nodejs_compat"]
 
 kv_namespaces = [
   { binding = "settings", id = "KV_NAME" }
 ]
+
+# Refreshes the proxy IP health cache every 6 hours (see src/proxy-manager.ts).
+# Cron Triggers need to be enabled once from the Cloudflare dashboard/CLI after first deploy
+# if you're deploying via the "Deploy with Workers" button rather than `wrangler deploy`.
+[triggers]
+crons = ["0 */6 * * *"]

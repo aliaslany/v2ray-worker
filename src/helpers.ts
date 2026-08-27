@@ -93,11 +93,27 @@ export function AddNumberToConfigs(configList: Array<Config>, start: number): Ar
 }
 
 export function GenerateToken(length: number = 32): string {
+  // Was using Math.random(), which is not a cryptographically secure PRNG — its output
+  // is predictable enough in principle to be a real risk for a bearer token that grants
+  // full admin-panel access. crypto.getRandomValues() is the standard Web Crypto API
+  // and is available in the Workers runtime.
   const buffer: Uint8Array = new Uint8Array(length)
-  for (let i = 0; i < length; i++) {
-    buffer[i] = Math.floor(Math.random() * 256)
-  }
+  crypto.getRandomValues(buffer)
   return Array.from(buffer).map(byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+export function ConstantTimeEqual(a: string, b: string): boolean {
+  // Plain === / != on secrets can leak timing information about how many leading
+  // characters matched. This compares in time proportional to the longer string,
+  // regardless of where the first mismatch occurs.
+  const maxLength = Math.max(a.length, b.length)
+  let mismatch = a.length === b.length ? 0 : 1
+  for (let i = 0; i < maxLength; i++) {
+    const charA = a.charCodeAt(i) || 0
+    const charB = b.charCodeAt(i) || 0
+    mismatch |= charA ^ charB
+  }
+  return mismatch === 0
 }
 
 export function Delay(ms: number): Promise<void> {

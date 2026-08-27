@@ -1,7 +1,10 @@
 import * as bcrypt from 'bcryptjs'
-import { GenerateToken } from "./helpers"
+import { GenerateToken, ConstantTimeEqual } from "./helpers"
 import { version, defaultProtocols, proxiesUri } from "./variables"
 import { Env } from "./interfaces"
+
+// How long an admin session token stays valid after login (in seconds).
+const TOKEN_TTL_SECONDS: number = 60 * 60 * 12 // 12 hours
 
 export async function GetPanel(request: Request, env: Env): Promise<Response> {
   const url: URL = new URL(request.url)
@@ -9,7 +12,7 @@ export async function GetPanel(request: Request, env: Env): Promise<Response> {
     const hash: string | null = await env.settings.get("Password")
     const token: string | null = await env.settings.get("Token")
 
-    if (hash && url.searchParams.get("token") != token) {
+    if (hash && !ConstantTimeEqual(url.searchParams.get("token") || "", token || "")) {
       return Response.redirect(`${url.origin}/login`, 302)
     }
 
@@ -591,7 +594,7 @@ export async function PostPanel(request: Request, env: Env): Promise<Response> {
 
     let hashedPassword: string | null = await env.settings.get("Password")
 
-    if (hashedPassword && url.searchParams.get("token") != token) {
+    if (hashedPassword && !ConstantTimeEqual(url.searchParams.get("token") || "", token || "")) {
       return Response.redirect(`${url.origin}/login`, 302)
     }
 
@@ -609,7 +612,7 @@ export async function PostPanel(request: Request, env: Env): Promise<Response> {
 
         token = GenerateToken(24)
         await env.settings.put("Password", hashedPassword)
-        await env.settings.put("Token", token)
+        await env.settings.put("Token", token, { expirationTtl: TOKEN_TTL_SECONDS })
       }
       let maxConfigs = parseInt(formData.get("max")?.toString() || "200")
       if (maxConfigs < 50) {

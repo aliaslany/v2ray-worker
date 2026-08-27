@@ -1,12 +1,11 @@
 import { connect } from 'cloudflare:sockets'
 import { GetVlessConfig, MuddleDomain, getUUID } from "./helpers"
-import { cfPorts, proxiesUri } from "./variables"
+import { cfPorts } from "./variables"
+import { PickProxyIP } from "./proxy-manager"
 import { RemoteSocketWrapper, CustomArrayBuffer, VlessHeader, UDPOutbound, Config, Env } from "./interfaces"
 
 const WS_READY_STATE_OPEN: number = 1
 const WS_READY_STATE_CLOSING: number = 2
-let proxyIP: string = ""
-let proxyList: Array<string> = []
 let blockPorn: string = ""
 let filterCountries: string = ""
 let countries: Array<string> = []
@@ -14,7 +13,6 @@ let countries: Array<string> = []
 export async function GetVlessConfigList(sni: string, addressList: Array<string>, start: number, max: number, env: Env) {
   filterCountries = ""
   blockPorn = ""
-  proxyList = []
   const uuid = getUUID(sni)
   let configList: Array<Config> = []
   for (let i = 0; i < max; i++) {
@@ -257,7 +255,7 @@ function ProcessVlessHeader(vlessBuffer: ArrayBuffer, uuid: string): VlessHeader
   } as VlessHeader
 }
 
-async function HandleUDPOutbound(webSocket: WebSocket, vlessResponseHeader: ArrayBuffer, env: Env): Promise<UDPOutbound> {
+async function HandleUDPOutbound(webSocket: WebSocket, vlessResponseHeader: Uint8Array, env: Env): Promise<UDPOutbound> {
   let isVlessHeaderSent = false
   const transformStream = new TransformStream({
     transform(chunk, controller) {
@@ -336,22 +334,12 @@ async function HandleTCPOutbound(remoteSocket: RemoteSocketWrapper, addressRemot
       return
     }
 
-    if (!proxyList.length) {
-      countries = (await env.settings.get("Countries"))?.split(",").filter(t => t.trim().length > 0) || []        
-      proxyList = await fetch(proxiesUri).then(r => r.text()).then(t => t.trim().split("\n").filter(t => t.trim().length > 0))
-      if (countries.length > 0) {
-        proxyList = proxyList.filter(t => {
-          const arr = t.split(",")
-          if (arr.length > 0) {
-            return countries.includes(arr[1])
-          }
-        })
-      }
-      proxyList = proxyList.map(ip => ip.split(",")[0])
-      console.log(proxyList)
+    if (!countries.length) {
+      countries = (await env.settings.get("Countries"))?.split(",").filter(t => t.trim().length > 0) || []
     }
-    if (proxyList.length > 0) {
-      proxyIP = proxyList[Math.floor(Math.random() * proxyList.length)]
+
+    const proxyIP: string | null = await PickProxyIP(env, countries)
+    if (proxyIP) {
       const tcpSocket: Socket = await connectAndWrite(proxyIP, portRemote)
       RemoteSocketToWS(tcpSocket, webSocket, vlessResponseHeader, retry)
     }
@@ -361,8 +349,8 @@ async function HandleTCPOutbound(remoteSocket: RemoteSocketWrapper, addressRemot
   RemoteSocketToWS(tcpSocket, webSocket, vlessResponseHeader, retry)
 }
 
-async function RemoteSocketToWS(remoteSocket: Socket, webSocket: WebSocket, vlessResponseHeader: ArrayBuffer, retry: (() => Promise<void>) | null): Promise<void> {
-  let vlessHeader: ArrayBuffer | null = vlessResponseHeader
+async function RemoteSocketToWS(remoteSocket: Socket, webSocket: WebSocket, vlessResponseHeader: Uint8Array, retry: (() => Promise<void>) | null): Promise<void> {
+  let vlessHeader: Uint8Array | null = vlessResponseHeader
   let hasIncomingData: boolean = false
   await remoteSocket.readable
     .pipeTo(

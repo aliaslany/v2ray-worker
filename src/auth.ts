@@ -3,6 +3,12 @@ import { GenerateToken, Delay } from "./helpers"
 import { Env } from "./interfaces"
 import { version } from "./variables"
 
+// How long an admin session token stays valid after login (in seconds).
+const TOKEN_TTL_SECONDS: number = 60 * 60 * 12 // 12 hours
+// Failed-attempt lockout window, keyed by client IP.
+const MAX_FAILED_ATTEMPTS: number = 5
+const LOCKOUT_WINDOW_SECONDS: number = 60 * 15 // 15 minutes
+
 export async function GetLogin(request: Request, env: Env): Promise<Response> {
   const url: URL = new URL(request.url)
   let htmlMessage = ""
@@ -51,19 +57,34 @@ export async function GetLogin(request: Request, env: Env): Promise<Response> {
 
 export async function PostLogin(request: Request, env: Env): Promise<Response> {
   const url: URL = new URL(request.url)
-  const formData = await request.formData()
-  const password: string = formData.get("password") || ""
-  let hashedPassword: string = await env.settings.get("Password") || ""
+  const clientIP: string = request.headers.get("cf-connecting-ip") || "unknown"
+  const attemptsKey: string = `LoginAttempts:${clientIP}`
 
   await Delay(1000)
 
+  // Simple IP-based lockout: after MAX_FAILED_ATTEMPTS failures within the window,
+  // reject outright without even checking the password. This is KV-based (not
+  // perfectly atomic under concurrent requests) but is a meaningful deterrent against
+  // naive brute-forcing, which previously had no protection beyond the flat 1s delay.
+  const attemptsRaw: string | null = await env.settings.get(attemptsKey)
+  const attempts: number = attemptsRaw ? parseInt(attemptsRaw) : 0
+  if (attempts >= MAX_FAILED_ATTEMPTS) {
+    return Response.redirect(`${url.protocol}//${url.hostname}${url.port != "443" ? ":" + url.port : ""}/login?message=error`, 302)
+  }
+
+  const formData = await request.formData()
+  const password: string = (formData.get("password")?.toString()) || ""
+  let hashedPassword: string = await env.settings.get("Password") || ""
+
   const match = await bcrypt.compare(password, hashedPassword)
-    
+
   if (match) {
+    await env.settings.delete(attemptsKey)
     const token: string = GenerateToken(24)
-    await env.settings.put("Token", token)
+    await env.settings.put("Token", token, { expirationTtl: TOKEN_TTL_SECONDS })
     return Response.redirect(`${url.protocol}//${url.hostname}${url.port != "443" ? ":" + url.port : ""}/?token=${token}`, 302)
   }
 
+  await env.settings.put(attemptsKey, (attempts + 1).toString(), { expirationTtl: LOCKOUT_WINDOW_SECONDS })
   return Response.redirect(`${url.protocol}//${url.hostname}${url.port != "443" ? ":" + url.port : ""}/login?message=error`, 302)
 }

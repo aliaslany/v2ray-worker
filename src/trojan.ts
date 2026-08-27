@@ -1,19 +1,17 @@
 import { connect } from 'cloudflare:sockets'
 import { GetTrojanConfig, MuddleDomain, getSHA224Password, getUUID } from "./helpers"
-import { cfPorts, proxiesUri } from "./variables"
+import { cfPorts } from "./variables"
+import { PickProxyIP } from "./proxy-manager"
 import { RemoteSocketWrapper, CustomArrayBuffer, VlessHeader, UDPOutbound, Config, Env } from "./interfaces"
 import { encodeBase64 } from 'bcryptjs'
 
 const WS_READY_STATE_OPEN: number = 1
 const WS_READY_STATE_CLOSING: number = 2
-let proxyIP: string = ""
-let proxyList: Array<string> = []
 let filterCountries: string = ""
 let countries: Array<string> = []
 
 export async function GetTrojanConfigList(sni: string, addressList: Array<string>, start: number, max: number, env: Env) {
   filterCountries = ""
-  proxyList = []
   let configList: Array<Config> = []
   for (let i = 0; i < max; i++) {
     configList.push(GetTrojanConfig(
@@ -186,21 +184,12 @@ async function HandleTCPOutbound(remoteSocket: RemoteSocketWrapper, addressRemot
       return
     }
 
-    if (!proxyList.length) {
-      countries = (await env.settings.get("Countries"))?.split(",").filter(t => t.trim().length > 0) || []        
-      proxyList = await fetch(proxiesUri).then(r => r.text()).then(t => t.trim().split("\n").filter(t => t.trim().length > 0))
-      if (countries.length > 0) {
-        proxyList = proxyList.filter(t => {
-          const arr = t.split(",")
-          if (arr.length > 0) {
-            return countries.includes(arr[1])
-          }
-        })
-      }
-      proxyList = proxyList.map(ip => ip.split(",")[0])
+    if (!countries.length) {
+      countries = (await env.settings.get("Countries"))?.split(",").filter(t => t.trim().length > 0) || []
     }
-    if (proxyList.length > 0) {
-      proxyIP = proxyList[Math.floor(Math.random() * proxyList.length)]
+
+    const proxyIP: string | null = await PickProxyIP(env, countries)
+    if (proxyIP) {
       const tcpSocket: Socket = await connectAndWrite(proxyIP, portRemote)
       RemoteSocketToWS(tcpSocket, webSocket, retry)
     }

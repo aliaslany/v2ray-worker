@@ -6,6 +6,7 @@ import { GetConfigList } from "./collector"
 import { ToYamlSubscription } from "./clash"
 import { ToBase64Subscription, ToRawSubscription } from "./sub"
 // import { ToCustomConfigSubscription } from "./custom"
+import { RefreshProxyHealthCache } from "./proxy-manager"
 import { Env, Config } from "./interfaces"
 
 let panelPath = ""
@@ -47,5 +48,11 @@ export default {
       }
     }
     return new Response("Invalid request!");
-  }
+  },
+
+  // Runs on the Cron Trigger defined in wrangler.toml. Tests every candidate proxy IP's
+  // TCP latency and writes a ranked, working-only list to KV for vless.ts/trojan.ts to use.
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(RefreshProxyHealthCache(env))
+  },
 }

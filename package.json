@@ -7,23 +7,24 @@
   "private": true,
   "scripts": {
     "deploy": "wrangler deploy",
-    "start": "wrangler dev"
+    "start": "wrangler dev",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20240529.0",
-    "@types/bcryptjs": "^2.4.6",
+    "@cloudflare/workers-types": "^5.20260826.1",
     "@types/crypto-js": "^4.2.2",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^20.12.13",
-    "@types/uuid": "^9.0.8",
-    "typescript": "^5.0.4",
-    "wrangler": "^3.57.2"
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.126.0"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
+    "bcryptjs": "^3.0.3",
     "buffer": "^6.0.3",
     "crypto-js": "^4.2.0",
     "js-yaml": "^4.1.0",
-    "uuid": "^9.0.1"
+    "uuid": "^11.0.0"
   }
 }
