@@ -4,7 +4,7 @@ compatibility_date = "2026-08-25"
 compatibility_flags = ["nodejs_compat"]
 
 kv_namespaces = [
-  { binding = "settings", id = "KV_NAME" }
+  { binding = "settings", id = "e0f718cbc09c40259878f6c272262b52" }
 ]
 
 # Refreshes the proxy IP health cache every 6 hours (see src/proxy-manager.ts).
