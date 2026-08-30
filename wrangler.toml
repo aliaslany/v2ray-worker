@@ -12,3 +12,18 @@ kv_namespaces = [
 # if you're deploying via the "Deploy with Workers" button rather than `wrangler deploy`.
 [triggers]
 crons = ["0 */6 * * *"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1
