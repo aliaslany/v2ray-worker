@@ -45,12 +45,17 @@ export async function VlessOverWSHandler(request: Request, sni: string, env: Env
 
   readableWebSocketStream.pipeTo(new WritableStream({
     async write(chunk, controller) {
+      // Every subsequent message chunk (after the first, which establishes the connection)
+      // needs the same ArrayBuffer -> Uint8Array normalization as the first one below —
+      // the WebSocket stream can hand us either a raw ArrayBuffer (normal binary frames)
+      // or an already-correct Uint8Array (the decoded early-data chunk after our fix).
+      const normalizedChunk: Uint8Array = new Uint8Array(chunk)
       if (isDns && udpStreamWrite) {
-        return udpStreamWrite(chunk)
+        return udpStreamWrite(normalizedChunk)
       }
       if (remoteSocketWapper.value) {
         const writer = remoteSocketWapper.value.writable.getWriter()
-        await writer.write(chunk)
+        await writer.write(normalizedChunk)
         writer.releaseLock()
         return
       }
@@ -65,7 +70,7 @@ export async function VlessOverWSHandler(request: Request, sni: string, env: Env
         vlessVersion = new Uint8Array([0, 0]),
         isUDP,
         isMUX,
-      } = ProcessVlessHeader(chunk, uuid)
+      } = ProcessVlessHeader(normalizedChunk, uuid)
       
       address = addressRemote
       
@@ -84,7 +89,7 @@ export async function VlessOverWSHandler(request: Request, sni: string, env: Env
       }
 
       const vlessResponseHeader: Uint8Array = new Uint8Array([vlessVersion[0], 0])
-      const rawClientData: Uint8Array = chunk.slice(rawDataIndex)
+      const rawClientData: Uint8Array = normalizedChunk.slice(rawDataIndex)
 
       if (isDns) {
         const { write }: UDPOutbound = await HandleUDPOutbound(webSocket, vlessResponseHeader, env)
@@ -155,7 +160,7 @@ function MakeReadableWebSocketStream(webSocketServer: WebSocket, earlyDataHeader
   return stream
 }
 
-function ProcessVlessHeader(vlessBuffer: ArrayBuffer, uuid: string): VlessHeader {
+function ProcessVlessHeader(vlessBuffer: Uint8Array, uuid: string): VlessHeader {
   if (vlessBuffer.byteLength < 24) {
     return {
       hasError: true,
@@ -198,8 +203,8 @@ function ProcessVlessHeader(vlessBuffer: ArrayBuffer, uuid: string): VlessHeader
   }
 
   const portIndex: number = 18 + optLength + 1
-  const portBuffer: ArrayBuffer = vlessBuffer.slice(portIndex, portIndex + 2)
-  const portRemote: number = new DataView(portBuffer).getUint16(0)
+  const portBuffer: Uint8Array = vlessBuffer.slice(portIndex, portIndex + 2)
+  const portRemote: number = new DataView(portBuffer.buffer).getUint16(0)
 
   let addressIndex: number = portIndex + 2
   const addressBuffer: Uint8Array = new Uint8Array(
@@ -230,7 +235,7 @@ function ProcessVlessHeader(vlessBuffer: ArrayBuffer, uuid: string): VlessHeader
     case 3:
       addressLength = 16
       const dataView = new DataView(
-        vlessBuffer.slice(addressValueIndex, addressValueIndex + addressLength)
+        vlessBuffer.slice(addressValueIndex, addressValueIndex + addressLength).buffer
       )
       const ipv6: Array<string> = []
       for (let i = 0; i < 8; i++) {

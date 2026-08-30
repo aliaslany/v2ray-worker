@@ -43,7 +43,10 @@ export async function TrojanOverWSHandler(request: Request, sni: string, env: En
     async write(chunk, controller) {
       if (remoteSocketWapper.value) {
         const writer = remoteSocketWapper.value.writable.getWriter();
-        await writer.write(chunk);
+        // chunk may be a raw ArrayBuffer (decoded early-data header, or any normal binary
+        // WebSocket frame) rather than a proper ArrayBufferView. See the matching fix and
+        // comment in vless.ts for the full explanation of why this throws otherwise.
+        await writer.write(new Uint8Array(chunk));
         writer.releaseLock();
         return;
       }
@@ -172,8 +175,10 @@ async function HandleTCPOutbound(remoteSocket: RemoteSocketWrapper, addressRemot
     const tcpSocket: Socket = connect(socketAddress)
     remoteSocket.value = tcpSocket
     // console.log(`connected to ${address}:${port}`);
-    const writer: WritableStreamDefaultWriter<ArrayBuffer> = tcpSocket.writable.getWriter()
-    await writer.write(rawClientData)
+    const writer: WritableStreamDefaultWriter<Uint8Array> = tcpSocket.writable.getWriter()
+    // rawClientData is a raw ArrayBuffer here (from socks5DataBuffer.slice()), but the
+    // socket's writable side needs an ArrayBufferView (Uint8Array), not a bare ArrayBuffer.
+    await writer.write(rawClientData ? new Uint8Array(rawClientData) : new Uint8Array())
     writer.releaseLock()
     return tcpSocket
   }
