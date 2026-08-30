@@ -112,6 +112,14 @@ function MakeReadableWebSocketStream(webSocketServer: WebSocket, earlyDataHeader
           return
         }
         const message: string | ArrayBuffer = event.data
+        // VLESS protocol data must always arrive as binary WebSocket frames. If a text
+        // frame ever shows up (a stray client keep-alive, some non-protocol noise), it
+        // gets pushed as-is into a strictly byte-oriented pipeline downstream (see
+        // HandleUDPOutbound's TransformStream), which throws and kills the connection.
+        // Drop non-binary frames instead of forwarding them as if they were valid data.
+        if (typeof message === 'string') {
+          return
+        }
         controller.enqueue(message)
       })
 

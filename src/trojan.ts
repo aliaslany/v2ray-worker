@@ -207,7 +207,13 @@ function MakeReadableWebSocketStream(webSocketServer: WebSocket, earlyDataHeader
                 if (readableStreamCancel) {
                     return;
                 }
-                const message = event.data;
+                const message: string | ArrayBuffer = event.data;
+                // See vless.ts's identical fix: text frames are never valid Trojan
+                // protocol data and crash the downstream byte-oriented pipeline if
+                // forwarded as-is. Drop them instead of enqueueing them.
+                if (typeof message === "string") {
+                    return;
+                }
                 controller.enqueue(message);
             });
             webSocketServer.addEventListener("close", () => {

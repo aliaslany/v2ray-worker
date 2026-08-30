@@ -13,6 +13,10 @@ kv_namespaces = [
 [triggers]
 crons = ["0 */6 * * *"]
 
+# Observability / logging. The top-level `enabled` is the master switch — it must be true
+# for the logs/traces sub-sections below to take effect at all, regardless of their own
+# `enabled` values. This was previously set to false while observability.logs.enabled was
+# true, which is why nothing showed up in the dashboard's live Logs view.
 [observability]
 enabled = true
 head_sampling_rate = 1
