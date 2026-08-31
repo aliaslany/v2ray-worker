@@ -165,8 +165,13 @@ async function ParseTrojanHeader(buffer: ArrayBuffer, sha224Password: string) {
 
 async function HandleTCPOutbound(remoteSocket: RemoteSocketWrapper, addressRemote: string, portRemote: number, rawClientData: ArrayBuffer | undefined, webSocket: WebSocket, env: Env): Promise<void> {
   const maxRetryCount = 5
+  // See vless.ts's identical fix: connect() has no built-in timeout, so an unreachable
+  // direct destination can hang far longer than a real client's own test timeout, well
+  // before we'd ever fall through to the pre-tested, known-fast proxy IPs.
+  const DIRECT_CONNECT_TIMEOUT_MS = 3000
   let retryCount = 0;
-  
+  let retryTriggered = false
+
   async function connectAndWrite(address: string, port: number) {
     const socketAddress: SocketAddress = {
       hostname: address,
@@ -184,6 +189,10 @@ async function HandleTCPOutbound(remoteSocket: RemoteSocketWrapper, addressRemot
   }
 
   async function retry() {
+    if (retryTriggered) {
+      return
+    }
+    retryTriggered = true
     retryCount++
     if (retryCount > maxRetryCount) {
       return
@@ -196,12 +205,18 @@ async function HandleTCPOutbound(remoteSocket: RemoteSocketWrapper, addressRemot
     const proxyIP: string | null = await PickProxyIP(env, countries)
     if (proxyIP) {
       const tcpSocket: Socket = await connectAndWrite(proxyIP, portRemote)
+      retryTriggered = false
       RemoteSocketToWS(tcpSocket, webSocket, retry)
     }
   }
 
   const tcpSocket: Socket = await connectAndWrite(addressRemote, portRemote)
-  RemoteSocketToWS(tcpSocket, webSocket, retry)
+  const timeoutId = setTimeout(() => {
+    tcpSocket.close().catch(() => { })
+    retry()
+  }, DIRECT_CONNECT_TIMEOUT_MS)
+  await RemoteSocketToWS(tcpSocket, webSocket, retry)
+  clearTimeout(timeoutId)
 }
 
 function MakeReadableWebSocketStream(webSocketServer: WebSocket, earlyDataHeader: string): ReadableStream {

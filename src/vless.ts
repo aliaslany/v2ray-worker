@@ -322,8 +322,15 @@ async function HandleUDPOutbound(webSocket: WebSocket, vlessResponseHeader: Uint
 
 async function HandleTCPOutbound(remoteSocket: RemoteSocketWrapper, addressRemote: string, portRemote: number, rawClientData: Uint8Array, webSocket: WebSocket, vlessResponseHeader: Uint8Array, env: Env): Promise<void> {
   const maxRetryCount = 5
+  // Cloudflare's connect() has no built-in connection timeout. If the destination is
+  // unreachable or silently drops packets (very common), awaiting it can hang far longer
+  // than any real client's own test timeout (v2rayN's bulk test gives up around ~5-6s) —
+  // long before we'd ever fall through to the pre-tested, known-fast proxy IPs. Racing the
+  // first attempt against this timeout ensures we escalate to the proxy fallback quickly.
+  const DIRECT_CONNECT_TIMEOUT_MS = 3000
   let retryCount = 0;
-  
+  let retryTriggered = false
+
   async function connectAndWrite(address: string, port: number) {
     const socketAddress: SocketAddress = {
       hostname: address,
@@ -342,6 +349,10 @@ async function HandleTCPOutbound(remoteSocket: RemoteSocketWrapper, addressRemot
   }
 
   async function retry() {
+    if (retryTriggered) {
+      return
+    }
+    retryTriggered = true
     retryCount++
     if (retryCount > maxRetryCount) {
       return
@@ -354,12 +365,20 @@ async function HandleTCPOutbound(remoteSocket: RemoteSocketWrapper, addressRemot
     const proxyIP: string | null = await PickProxyIP(env, countries)
     if (proxyIP) {
       const tcpSocket: Socket = await connectAndWrite(proxyIP, portRemote)
+      retryTriggered = false
       RemoteSocketToWS(tcpSocket, webSocket, vlessResponseHeader, retry)
     }
   }
 
   const tcpSocket: Socket = await connectAndWrite(addressRemote, portRemote)
-  RemoteSocketToWS(tcpSocket, webSocket, vlessResponseHeader, retry)
+  const timeoutId = setTimeout(() => {
+    // Actively close the stalled attempt so it can't later deliver duplicate/interleaved
+    // data to the same webSocket alongside whatever the proxy-IP fallback connects to.
+    tcpSocket.close().catch(() => { })
+    retry()
+  }, DIRECT_CONNECT_TIMEOUT_MS)
+  await RemoteSocketToWS(tcpSocket, webSocket, vlessResponseHeader, retry)
+  clearTimeout(timeoutId)
 }
 
 async function RemoteSocketToWS(remoteSocket: Socket, webSocket: WebSocket, vlessResponseHeader: Uint8Array, retry: (() => Promise<void>) | null): Promise<void> {
