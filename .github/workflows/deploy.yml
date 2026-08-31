@@ -1,6 +1,8 @@
 name: Deploy Worker
 on:
-  repository_dispatch:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -9,16 +11,16 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
-      
+      uses: actions/checkout@v5
+
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
-        node-version: "latest"
+        node-version: "22"
         cache: "npm"
 
-    - name: Install modules
-      run: npm i wrangler@latest
+    - name: Install dependencies
+      run: npm ci
 
     - name: Build
       run: npx wrangler build
@@ -27,5 +29,7 @@ jobs:
       run: cp ${{ github.workspace }}/dist/worker.js ${{ github.workspace }}/dist/worker-original.js && echo -e "/*!\n  * v2ray Subscription Worker (${{ github.sha }})\n  * Copyright 2024 Vahid Farid (https://twitter.com/vahidfarid)\n  * Licensed under GPLv3 (https://github.com/vfarid/v2ray-worker/blob/main/Licence.md)\n  */\n\n$(cat ${{ github.workspace }}/dist/worker.js)" > ${{ github.workspace }}/dist/worker.js
 
     - name: Deploy
-      run: sed -i "s/KV_NAME/{{ secrets.KV_NAME }}/g" wrangler.toml && wrangler deploy --api-token ${{ secrets.CF_API_TOKEN }} --account-id ${{ secrets.CF_ACCOUNT_ID }}
+      # wrangler.toml now commits the real KV namespace id directly (namespace ids
+      # aren't secret), so no more sed substitution trick is needed here.
+      run: wrangler deploy --api-token ${{ secrets.CF_API_TOKEN }} --account-id ${{ secrets.CF_ACCOUNT_ID }}
 
