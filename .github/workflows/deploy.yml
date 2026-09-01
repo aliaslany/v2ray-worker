@@ -31,4 +31,4 @@ jobs:
     - name: Deploy
       # wrangler.toml now commits the real KV namespace id directly (namespace ids
       # aren't secret), so no more sed substitution trick is needed here.
-      run: npx wrangler deploy
+      run: npx wrangler deploy --api-token ${{ secrets.CF_API_TOKEN }} --account-id ${{ secrets.CF_ACCOUNT_ID }}
